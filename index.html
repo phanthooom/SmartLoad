@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D-КАЛЬКУЛЯТОР ЗАГРУЗКИ</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
+    <script>
+      if (localStorage.getItem('smartload_auth') === 'true') {
+        document.documentElement.classList.add('is-auth');
+      }
+    </script>
+    <style>
+      html.is-auth #login-screen { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="login-screen" style="position: fixed; inset: 0; background: #0f172a; z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s ease;">
+      <img src="https://tsteam.aero/img/header_logo.png" alt="TS Team Logo" style="display: none; height: 80px; margin-bottom: 40px; object-fit: contain;">
+      <h2 style="color: white; font-weight: 500; margin-bottom: 20px;">Введите PIN-код</h2>
+      <div id="pin-container" style="display: flex; gap: 15px;">
+        <input type="password" maxlength="1" class="pin-box">
+        <input type="password" maxlength="1" class="pin-box">
+        <input type="password" maxlength="1" class="pin-box">
+        <input type="password" maxlength="1" class="pin-box">
+      </div>
+      <p id="login-error" style="color: #ef4444; margin-top: 20px; font-size: 0.9rem; opacity: 0; transition: opacity 0.3s;">Неверный PIN-код</p>
+    </div>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen" style="position: fixed; inset: 0; background: #0f172a; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; transition: opacity 0.8s ease; padding: 40px 0;">
+      <img src="https://tsteam.aero/img/header_logo.png" alt="TS Team Logo" style="display: none; height: 80px; object-fit: contain; z-index: 2;">
+      <lottie-player src="/loading.json" renderer="canvas" background="transparent" speed="1" style="flex: 1; width: 100%; max-height: 80vh; z-index: 1;" loop autoplay></lottie-player>
+      <p style="color: #94a3b8; font-size: 1.2rem; font-weight: 500; letter-spacing: 1px; z-index: 2;">Загрузка калькулятора...</p>
+    </div>
+
+    <div id="app">
+      <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle Sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+      <aside class="sidebar" id="sidebar">
+        <header>
+          <h1>3D-КАЛЬКУЛЯТОР ЗАГРУЗКИ</h1>
+        </header>
+
+        <section class="settings-section">
+          <h2>НАСТРОЙКИ ЗАГРУЗКИ</h2>
+          <div class="form-group">
+            <label for="container-type">Выбор контейнера:</label>
+            <select id="container-type">
+              <option disabled>--- Морские контейнеры ---</option>
+              <option value="10ft">10ft Standard Container</option>
+              <option value="20ft">20ft Standard Container</option>
+              <option value="40ft_std">40ft Standard Container</option>
+              <option value="40ft">40ft High Cube</option>
+              <option value="45ft_hc">45ft High Cube</option>
+              <option disabled>--- Трейлеры и фуры ---</option>
+              <option value="truck">Truck Trailer</option>
+              <option value="eurotrailer">Евротрейлер (Полуприцеп)</option>
+              <option value="refrigerator">Рефрижератор</option>
+              <option value="isotherm">Изотерм (Полуприцеп)</option>
+              <option value="euro_82">Еврофура 82 м³ (13.6x2.45x2.45)</option>
+              <option value="euro_86">Еврофура 86 м³ (13.6x2.45x2.60)</option>
+              <option value="euro_90">Еврофура 90 м³ (13.6x2.45x2.70)</option>
+              <option value="euro_92">Еврофура 92 м³ (13.6x2.45x2.80)</option>
+              <option value="euro_96">Еврофура 96 м³ (13.6x2.45x2.90)</option>
+              <option value="mega_100">Мега фура 100 м³ (13.6x2.45x3.00)</option>
+              <option disabled>--- Мало- и среднетоннажные ---</option>
+              <option value="gazelle">Газель (Тент) 1.5 т</option>
+              <option value="truck_3t">Грузовик 3 т (Бычок)</option>
+              <option value="truck_5t">Грузовик 5 т (Пятитонник)</option>
+              <option value="truck_10t">Грузовик 10 т (Десятитонник)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-top: 1rem;">
+            <label for="floor-color">Цвет пола контейнера:</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="color" id="floor-color" value="#8b5a2b" style="padding: 0; width: 40px; height: 40px; border: none; cursor: pointer; border-radius: 4px; background: transparent;">
+                <span id="floor-color-hex" style="font-size: 0.85rem; color: var(--text-muted);">#8b5a2b</span>
+            </div>
+          </div>
+          <div class="container-info glass-panel">
+            <div class="info-row"><span>Длина:</span> <span id="c-length">589.8</span> см</div>
+            <div class="info-row"><span>Ширина:</span> <span id="c-width">235.2</span> см</div>
+            <div class="info-row"><span>Высота:</span> <span id="c-height">239.3</span> см</div>
+            <div class="info-row"><span>Макс. вес:</span> <span id="c-weight">28200</span> кг</div>
+          </div>
+        </section>
+
+        <section class="add-cargo-section">
+          <h2>ВВЕСТИ ГРУЗ</h2>
+          <form id="cargo-form" class="glass-panel">
+            <div class="form-group">
+              <label for="box-preset">Шаблон груза:</label>
+              <select id="box-preset">
+                <option value="">-- Свой размер --</option>
+                <option value="box-s">Коробка S (30x20x15 см)</option>
+                <option value="box-m">Коробка M (40x30x20 см)</option>
+                <option value="box-l">Коробка L (60x40x40 см)</option>
+                <option value="euro">Европаллета (120x80x15 см)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Название</label>
+                <input type="text" id="cargo-name" required placeholder="Коробка A" />
+              </div>
+              <div class="form-group small">
+                <label>Кол-во</label>
+                <input type="number" id="cargo-qty" required min="1" value="1" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group small">
+                <label>Д(см)</label>
+                <input type="number" id="cargo-l" required min="1" value="50" />
+              </div>
+              <div class="form-group small">
+                <label>Ш(см)</label>
+                <input type="number" id="cargo-w" required min="1" value="40" />
+              </div>
+              <div class="form-group small">
+                <label>В(см)</label>
+                <input type="number" id="cargo-h" required min="1" value="30" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Вес 1 шт (кг)</label>
+              <input type="number" id="cargo-weight" required min="0.1" step="0.1" value="10" />
+            </div>
+            <div class="checkbox-group">
+              <label><input type="checkbox" id="cargo-rotatable" checked /> Можно переворачивать</label>
+              <label><input type="checkbox" id="cargo-stackable" checked /> Можно штабелировать</label>
+              <label style="color: #60a5fa;"><input type="checkbox" id="cargo-palletize" /> Упаковывать на паллеты</label>
+            </div>
+            <button type="submit" class="btn-primary">ДОБАВИТЬ ГРУЗ</button>
+          </form>
+        </section>
+
+        <section class="cargo-list-section">
+          <h2>СПИСОК ГРУЗОВ</h2>
+          <div class="table-container glass-panel">
+            <table id="cargo-table">
+              <thead>
+                <tr>
+                  <th>Цвет</th>
+                  <th>Название</th>
+                  <th>Кол-во</th>
+                  <th>Размер</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- Rows will be added dynamically -->
+              </tbody>
+            </table>
+          </div>
+          
+          <div style="font-size: 0.8rem; color: #9ca3af; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
+            💡 <b>3D Редактирование:</b> Кликните на коробку в 3D.<br>
+            Клавиша <b>T</b> - переместить<br>
+            Клавиша <b>R</b> - вращать<br>
+            Клавиша <b>C</b> - клонировать<br>
+            <b>Esc</b> - снять выделение
+          </div>
+        </section>
+
+        <button id="calculate-btn" class="btn-accent">РАССЧИТАТЬ ЗАГРУЗКУ</button>
+        <div id="debug-overlay" style="position:fixed; top:10px; right:10px; background:rgba(0,0,0,0.8); color:lime; padding:10px; font-family:monospace; z-index:9999; pointer-events:none;">DEBUG READY</div>
+
+        <section class="stats-section">
+          <h2>СТАТИСТИКА</h2>
+          <div class="stats-container glass-panel">
+            <div class="stat-row"><span>ИСПОЛЬЗОВАНИЕ ОБЪЕМА:</span> <strong id="stat-volume-percent">0%</strong></div>
+            <div class="stat-row"><span>ИСПОЛЬЗОВАННЫЙ ВЕС:</span> <strong id="stat-weight">0 кг</strong></div>
+            <div class="stat-row"><span>СВОБОДНОЕ МЕСТО:</span> <strong id="stat-free-vol">0 м³</strong></div>
+          </div>
+        </section>
+      </aside>
+
+      <main class="canvas-container">
+        <canvas id="three-canvas"></canvas>
+        
+        <div id="loading-overlay" class="hidden">
+          <div class="spinner"></div>
+          <p>Расчет загрузки...</p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
