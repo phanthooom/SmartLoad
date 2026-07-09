@@ -6,13 +6,16 @@ export class CargoScene {
   constructor(canvas) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
-    this.scene.background = null; // transparent, controlled by CSS
+    this.scene.background = new THREE.Color(0xf1f5f9); // light gray background
     
-    this.camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+    const w = canvas.clientWidth || 800;
+    const h = canvas.clientHeight || 600;
+    
+    this.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
     this.camera.position.set(8, 5, 8);
     
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -40,6 +43,8 @@ export class CargoScene {
     this._matCache = {};
     this._texCache = {};
     this._renderScheduled = false;
+    this.currentToolMode = 'translate';
+
     
     // Watch sidebar class changes to trigger render
     const appEl = document.getElementById('app');
@@ -97,13 +102,12 @@ export class CargoScene {
       this.controls.update();
     }, { passive: false, capture: true });
 
-    // TransformControls for manual manipulation
     this.transformControl = new TransformControls(this.camera, this.renderer.domElement);
-    this.transformControl.setSize(2.0); // Make gizmo much larger and visible
-    
+    this.transformControl.addEventListener('change', () => this.requestRender());
     this.transformControl.addEventListener('dragging-changed', (event) => {
       this.controls.enabled = !event.value;
     });
+    this.scene.add(this.transformControl.getHelper());
     this.transformControl.addEventListener('change', () => {
       const debug = document.getElementById('debug-overlay');
       if (this.selectedMesh) {
@@ -144,8 +148,6 @@ export class CargoScene {
         if (debug) debug.innerText = `Pos: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} [Staged: ${p.isStaged}]`;
       }
     });
-    this.scene.add(this.transformControl);
-    this.transformControl.addEventListener('change', () => this.requestRender());
 
     // Keyboard shortcuts for TransformControls
     window.addEventListener('keydown', (event) => {
@@ -156,20 +158,24 @@ export class CargoScene {
         return;
       }
       switch(event.key.toLowerCase()) {
-        case 't': this.transformControl.setMode('translate'); break;
-        case 'r': this.transformControl.setMode('rotate'); break;
+        case 't': 
+          if(this.onToolChange) this.onToolChange('translate');
+          else this.setToolMode('translate'); 
+          break;
+        case 'r': 
+          if(this.onToolChange) this.onToolChange('rotate');
+          else this.setToolMode('rotate'); 
+          break;
         case 'c': 
           if (this.onCargoClone) this.onCargoClone(this.selectedMesh.userData);
           break;
         case 'escape': 
-          if (this.selectedMesh && Array.isArray(this.selectedMesh.material)) {
-            this.selectedMesh.material.forEach(m => m.emissive.setHex(0x000000));
-          }
-          this.transformControl.detach();
-          this.selectedMesh = null;
-          this.setFocusMode(false);
-          this.resetCameraTarget();
-          if (this.onCargoSelect) this.onCargoSelect(null);
+          if(this.onToolChange) this.onToolChange('select');
+          else this.setToolMode('select');
+          break;
+        case 'delete':
+        case 'backspace':
+          this.deleteSelected();
           break;
       }
     });
@@ -177,6 +183,40 @@ export class CargoScene {
     this.renderer.domElement.addEventListener('dblclick', this.onDoubleClick.bind(this));
 
     this.requestRender(); // Initial render
+  }
+
+  setToolMode(mode) {
+    this.currentToolMode = mode;
+    if (mode === 'translate' || mode === 'rotate') {
+      this.transformControl.setMode(mode);
+      if (this.selectedMesh) {
+        try {
+          this.transformControl.attach(this.selectedMesh);
+        } catch(e) {}
+      }
+    } else {
+      this.transformControl.detach();
+      if (mode === 'select' && this.selectedMesh) {
+          // Just keep it selected but remove gizmo
+      }
+    }
+  }
+
+  deleteSelected() {
+    if (this.selectedMesh) {
+      if (this.onCargoDelete) {
+        this.onCargoDelete(this.selectedMesh.userData);
+      }
+      this.transformControl.detach();
+      if (Array.isArray(this.selectedMesh.material)) {
+        this.selectedMesh.material.forEach(m => m.emissive.setHex(0x000000));
+      }
+      this.selectedMesh = null;
+      this.setFocusMode(false);
+      this.resetCameraTarget();
+      if (this.onCargoSelect) this.onCargoSelect(null);
+      this.requestRender();
+    }
   }
 
   onDoubleClick(event) {
@@ -261,10 +301,12 @@ export class CargoScene {
           this.selectedMesh.material.forEach(m => m.emissive.setHex(0x444444));
         }
         
-        try {
-          this.transformControl.attach(this.selectedMesh);
-        } catch(e) {
-          console.error("Attach error", e);
+        if (this.currentToolMode === 'translate' || this.currentToolMode === 'rotate') {
+          try {
+            this.transformControl.attach(this.selectedMesh);
+          } catch(e) {
+            console.error("Attach error", e);
+          }
         }
         
         this.setFocusMode(true);
@@ -353,10 +395,12 @@ export class CargoScene {
           this.selectedMesh.material.forEach(m => m.emissive.setHex(0x444444));
         }
         
-        try {
-          this.transformControl.attach(this.selectedMesh);
-        } catch(e) {
-          console.error("Attach error", e);
+        if (this.currentToolMode === 'translate' || this.currentToolMode === 'rotate') {
+          try {
+            this.transformControl.attach(this.selectedMesh);
+          } catch(e) {
+            console.error("Attach error", e);
+          }
         }
         
         this.setFocusMode(true);
@@ -587,153 +631,35 @@ export class CargoScene {
   }
 
   createContainer(w, h, l, type = '') {
+    console.log("createContainer called with:", w, h, l, type);
     this.containerW = w;
     this.containerH = h;
     this.containerL = l;
 
     this.disposeGroup(this.containerGroup);
     
+    if (!w || !h || !l) {
+      console.warn("createContainer aborting: w, h, or l is 0 or undefined");
+      return;
+    }
+    
     const sx = w / 100;
     const sy = h / 100;
     const sz = l / 100;
 
-    const floorGeo = new THREE.BoxGeometry(sx, 0.05, sz);
-    const woodTex = this.createWoodTexture(this.floorColor || '#8B5A2B');
-    const floorMat = new THREE.MeshStandardMaterial({ map: woodTex });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.set(sx/2, -0.025, sz/2);
-    floor.receiveShadow = true;
-    floor.raycast = () => {};
-    this.containerGroup.add(floor);
+    // прицеп (прозрачный синий бокс)
+    const trailerGeo = new THREE.BoxGeometry(sx, sy, sz);
+    const trailerMat = new THREE.MeshBasicMaterial({
+      color: 0x378ADD, transparent: true, opacity: 0.2, side: THREE.DoubleSide
+    });
+    const trailer = new THREE.Mesh(trailerGeo, trailerMat);
+    trailer.position.set(sx/2, sy/2, sz/2);
+    trailer.raycast = () => {};
+    this.containerGroup.add(trailer);
 
-    const isSeaContainer = ['10ft', '20ft', '40ft', '40ft_std', '45ft_hc'].includes(type) || type === '';
-    const isTruck = ['truck', 'gazelle', 'truck_3t', 'truck_5t', 'truck_10t'].includes(type);
-    const isTrailer = ['eurotrailer', 'isotherm', 'euro_82', 'euro_86', 'euro_90', 'euro_92', 'euro_96', 'mega_100'].includes(type);
-    const isRef = type === 'refrigerator';
-
-    if (isSeaContainer) {
-      const color = type.includes('40') ? '#2e4975' : (type.includes('45') ? '#8c2626' : '#275c3f');
-      const { diffuse, normal } = this.createCorrugatedTextures(color);
-      diffuse.repeat.set(sz, 1);
-      normal.repeat.set(sz, 1);
-      
-      const wallMat = new THREE.MeshStandardMaterial({ map: diffuse, normalMap: normal, metalness: 0.3, roughness: 0.7 });
-      wallMat.side = THREE.DoubleSide;
-
-      const backGeo = new THREE.PlaneGeometry(sx, sy);
-      const backWall = new THREE.Mesh(backGeo, wallMat.clone());
-      backWall.material.map.repeat.set(sx, 1);
-      backWall.material.normalMap.repeat.set(sx, 1);
-      backWall.position.set(sx/2, sy/2, 0);
-      backWall.receiveShadow = true;
-      backWall.raycast = () => {};
-      this.containerGroup.add(backWall);
-
-      const leftGeo = new THREE.PlaneGeometry(sz, sy);
-      const leftWall = new THREE.Mesh(leftGeo, wallMat);
-      leftWall.rotation.y = Math.PI / 2;
-      leftWall.position.set(0, sy/2, sz/2);
-      leftWall.receiveShadow = true;
-      leftWall.raycast = () => {};
-      this.containerGroup.add(leftWall);
-
-      const pGeo = new THREE.BoxGeometry(0.1, sy, 0.1);
-      const pMat = new THREE.MeshStandardMaterial({ color });
-      [[0.05, sy/2, 0.05], [sx-0.05, sy/2, 0.05], [0.05, sy/2, sz-0.05], [sx-0.05, sy/2, sz-0.05]].forEach(pos => {
-        const p = new THREE.Mesh(pGeo, pMat);
-        p.position.set(...pos);
-        p.raycast = () => {};
-        this.containerGroup.add(p);
-      });
-      
-      const frameMat = new THREE.MeshStandardMaterial({ color });
-      const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, sz), frameMat);
-      frameRight.position.set(sx, sy, sz/2);
-      frameRight.raycast = () => {};
-      this.containerGroup.add(frameRight);
-      
-      const frameFront = new THREE.Mesh(new THREE.BoxGeometry(sx, 0.05, 0.05), frameMat);
-      frameFront.position.set(sx/2, sy, sz);
-      frameFront.raycast = () => {};
-      this.containerGroup.add(frameFront);
-
-    } else if (isTruck || isTrailer || isRef) {
-      const wallColor = isRef ? '#ffffff' : (isTrailer ? '#d1d5db' : '#3b82f6');
-      const wallMat = new THREE.MeshStandardMaterial({ color: wallColor, side: THREE.DoubleSide, roughness: 0.9 });
-      
-      const backGeo = new THREE.PlaneGeometry(sx, sy);
-      const backWall = new THREE.Mesh(backGeo, wallMat);
-      backWall.position.set(sx/2, sy/2, 0);
-      backWall.raycast = () => {};
-      this.containerGroup.add(backWall);
-
-      const leftGeo = new THREE.PlaneGeometry(sz, sy);
-      const leftWall = new THREE.Mesh(leftGeo, wallMat);
-      leftWall.rotation.y = Math.PI / 2;
-      leftWall.position.set(0, sy/2, sz/2);
-      leftWall.raycast = () => {};
-      this.containerGroup.add(leftWall);
-      
-      const pGeo = new THREE.BoxGeometry(0.05, sy, 0.05);
-      const pMat = new THREE.MeshStandardMaterial({ color: '#4b5563' });
-      [[0.025, sy/2, 0.025], [sx-0.025, sy/2, 0.025], [0.025, sy/2, sz-0.025], [sx-0.025, sy/2, sz-0.025]].forEach(pos => {
-        const p = new THREE.Mesh(pGeo, pMat);
-        p.position.set(...pos);
-        p.raycast = () => {};
-        this.containerGroup.add(p);
-      });
-      
-      const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.2, 32);
-      const wheelMat = new THREE.MeshStandardMaterial({ color: '#1f2937', roughness: 0.8 });
-      wheelGeo.rotateZ(Math.PI / 2);
-      
-      const numWheels = Math.max(2, Math.floor(sz / 3));
-      for (let i = 0; i < numWheels; i++) {
-        const zPos = sz - 1.5 - (i * 1.5);
-        if (zPos < 0) continue;
-        const w1 = new THREE.Mesh(wheelGeo, wheelMat);
-        w1.position.set(0.1, -0.45, zPos);
-        w1.raycast = () => {};
-        this.containerGroup.add(w1);
-        
-        const w2 = new THREE.Mesh(wheelGeo, wheelMat);
-        w2.position.set(sx - 0.1, -0.45, zPos);
-        w2.raycast = () => {};
-        this.containerGroup.add(w2);
-      }
-      
-      if (isTruck) {
-        const cabDepth = 2.0;
-        const cabHeight = Math.min(sy * 0.9, 2.5);
-        const cabGeo = new THREE.BoxGeometry(sx * 0.9, cabHeight, cabDepth);
-        const cabMat = new THREE.MeshStandardMaterial({ color: wallColor });
-        const cab = new THREE.Mesh(cabGeo, cabMat);
-        cab.position.set(sx/2, cabHeight/2, -cabDepth/2 - 0.1);
-        cab.raycast = () => {};
-        this.containerGroup.add(cab);
-        
-        const cw1 = new THREE.Mesh(wheelGeo, wheelMat);
-        cw1.position.set(0.1, -0.45, -cabDepth/2);
-        cw1.raycast = () => {};
-        this.containerGroup.add(cw1);
-        const cw2 = new THREE.Mesh(wheelGeo, wheelMat);
-        cw2.position.set(sx - 0.1, -0.45, -cabDepth/2);
-        cw2.raycast = () => {};
-        this.containerGroup.add(cw2);
-      }
-      
-      if (isRef) {
-        const refGeo = new THREE.BoxGeometry(Math.min(sx * 0.8, 1.8), Math.min(sy * 0.6, 1.5), 0.4);
-        const refMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.5 });
-        const refMesh = new THREE.Mesh(refGeo, refMat);
-        refMesh.position.set(sx/2, sy * 0.7, -0.2);
-        refMesh.raycast = () => {};
-        this.containerGroup.add(refMesh);
-      }
-    }
-
-    const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz));
-    const edgesMat = new THREE.LineBasicMaterial({ color: 0x9ca3af, linewidth: 1, transparent: true, opacity: 0.2 });
+    // синие грани прицепа
+    const edgesGeo = new THREE.EdgesGeometry(trailerGeo);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x185FA5, linewidth: 2 });
     const edges = new THREE.LineSegments(edgesGeo, edgesMat);
     edges.position.set(sx/2, sy/2, sz/2);
     edges.raycast = () => {};
@@ -743,8 +669,8 @@ export class CargoScene {
     this.controls.target.set(sx/2, sy/2, sz/2);
     this.controls.update();
 
-    // Draw Staging Zone (Loading Area) on the floor next to the truck
-    this.drawStagingZone(sx, sz);
+    this.renderer.render(this.scene, this.camera);
+    this.requestRender();
   }
 
   drawStagingZone(sx, sz) {
@@ -913,9 +839,13 @@ export class CargoScene {
 
 
   onWindowResize() {
-    this.camera.aspect = this.canvas.clientWidth / this.canvas.clientHeight;
+    const parent = this.canvas.parentElement;
+    const w = parent ? parent.clientWidth : this.canvas.clientWidth;
+    const h = parent ? parent.clientHeight : this.canvas.clientHeight;
+    if (w === 0 || h === 0) return; // Not visible yet, skip
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(this.canvas.clientWidth, this.canvas.clientHeight);
+    this.renderer.setSize(w, h);
     this.requestRender();
   }
 
@@ -957,22 +887,26 @@ export class CargoScene {
     const isDesktop = window.innerWidth > 768;
     const targetOffset = (isSidebarOpen && isDesktop) ? -240 : 0;
     
-    if (Math.abs(this.currentViewOffset - targetOffset) > 0.5) {
-      this.currentViewOffset += (targetOffset - this.currentViewOffset) * 0.1;
-      const width = this.canvas.clientWidth;
-      const height = this.canvas.clientHeight;
-      if (width > 0 && height > 0) {
-        this.camera.setViewOffset(width, height, this.currentViewOffset, 0, width, height);
-      }
-      needsMore = true;
-    } else if (this.currentViewOffset !== targetOffset) {
+    // Initialize currentViewOffset if it's undefined
+    if (this.currentViewOffset === undefined) {
       this.currentViewOffset = targetOffset;
-      const width = this.canvas.clientWidth;
-      const height = this.canvas.clientHeight;
-      if (targetOffset === 0) {
-        this.camera.clearViewOffset();
-      } else {
+    }
+    
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    
+    if (width > 0 && height > 0) {
+      if (Math.abs(this.currentViewOffset - targetOffset) > 0.5) {
+        this.currentViewOffset += (targetOffset - this.currentViewOffset) * 0.1;
         this.camera.setViewOffset(width, height, this.currentViewOffset, 0, width, height);
+        needsMore = true;
+      } else if (this.currentViewOffset !== targetOffset || this.camera.view === null && targetOffset !== 0) {
+        this.currentViewOffset = targetOffset;
+        if (targetOffset === 0) {
+          this.camera.clearViewOffset();
+        } else {
+          this.camera.setViewOffset(width, height, this.currentViewOffset, 0, width, height);
+        }
       }
     }
     
