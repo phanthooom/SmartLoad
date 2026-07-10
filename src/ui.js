@@ -312,7 +312,7 @@ export class UI {
                       <div style="color: ${isActive ? 'var(--accent-color)' : '#94a3b8'};">${icon}</div>
                       <div>
                           <div style="font-weight: 600; font-size: 0.9rem;">${t.name}</div>
-                          <div style="font-size: 0.8rem; color: #64748b;">${t.l} x ${t.w} x ${t.h} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³</div>
+                          <div style="font-size: 0.8rem; color: #64748b;">${t.l*10} x ${t.w*10} x ${t.h*10} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³</div>
                       </div>
                   </div>
                   <div style="display: flex; align-items: center; gap: 0.75rem;">
@@ -385,7 +385,7 @@ export class UI {
                       <div class="t-item-v2-icon">${icon}</div>
                       <div>
                           <div style="font-weight: 600; font-size: 0.9rem;">${t.name}</div>
-                          <div style="font-size: 0.8rem; color: #64748b;">${t.l} x ${t.w} x ${t.h} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³</div>
+                          <div style="font-size: 0.8rem; color: #64748b;">${t.l*10} x ${t.w*10} x ${t.h*10} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³</div>
                       </div>
                   </div>
                   <button class="btn-add-t" style="background: none; border: none; color: ${alreadyAdded ? '#94a3b8' : 'var(--accent-color)'}; font-weight: 600; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
@@ -395,6 +395,10 @@ export class UI {
               
               if (!alreadyAdded) {
                   item.querySelector('.btn-add-t').addEventListener('click', () => {
+                      if (this.projectTransports.length >= 10) {
+                          alert("Достигнут лимит в 10 транспортов");
+                          return;
+                      }
                       this.projectTransports.push(key);
                       this.currentContainerKey = key;
                       this.currentContainer = t;
@@ -470,13 +474,13 @@ export class UI {
 
   init() {
     this.presetSelect.addEventListener('change', (e) => {
-      const preset = this.boxPresets[e.target.value];
-      if (preset) {
-        document.getElementById('cargo-name').value = preset.name;
-        document.getElementById('cargo-l').value = preset.l;
-        document.getElementById('cargo-w').value = preset.w;
-        document.getElementById('cargo-h').value = preset.h;
-        document.getElementById('cargo-weight').value = preset.weight;
+      const p = this.boxPresets[e.target.value];
+      if(p) {
+        document.getElementById('cargo-name').value = p.name;
+        document.getElementById('cargo-l').value = p.l * 10;
+        document.getElementById('cargo-w').value = p.w * 10;
+        document.getElementById('cargo-h').value = p.h * 10;
+        document.getElementById('cargo-weight').value = p.weight;
       }
     });
 
@@ -532,9 +536,9 @@ export class UI {
   addCargo() {
     const name = document.getElementById('cargo-name').value;
     const qty = parseInt(document.getElementById('cargo-qty').value);
-    const l = parseFloat(document.getElementById('cargo-l').value);
-    const w = parseFloat(document.getElementById('cargo-w').value);
-    const h = parseFloat(document.getElementById('cargo-h').value);
+    const l = parseFloat(document.getElementById('cargo-l').value) / 10;
+    const w = parseFloat(document.getElementById('cargo-w').value) / 10;
+    const h = parseFloat(document.getElementById('cargo-h').value) / 10;
     const weight = parseFloat(document.getElementById('cargo-weight').value);
     const rotatable = document.getElementById('cargo-rotatable').checked;
     
@@ -576,7 +580,7 @@ export class UI {
         <td><div class="color-dot" style="background-color: ${c.color}"></div></td>
         <td><strong>${c.name}</strong></td>
         <td>${c.qty} шт</td>
-        <td>${c.l} x ${c.w} x ${c.h}</td>
+        <td>${c.l*10} x ${c.w*10} x ${c.h*10}</td>
         <td>${c.weight} кг</td>
         <td>
            <button class="icon-btn delete-btn" data-id="${c.id}" title="Удалить">
@@ -628,7 +632,7 @@ export class UI {
     }
     
     if (tNameEl) tNameEl.innerText = t.name;
-    if (tDimEl) tDimEl.innerText = `${t.l} x ${t.w} x ${t.h} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³`;
+    if (tDimEl) tDimEl.innerText = `${t.l*10} x ${t.w*10} x ${t.h*10} мм, ${t.maxWeight} кг, ${((t.l*t.w*t.h)/1000000).toFixed(1)} м³`;
 
     if (this.cargoList.length === 0) {
         // Draw empty truck
@@ -728,7 +732,7 @@ export class UI {
             sceneCargoList.innerHTML = '';
             document.getElementById('cargo-total-count').innerText = `${this.cargoList.reduce((acc, c) => acc + c.qty, 0)} шт`;
             
-            this.cargoList.forEach(c => {
+            this.cargoList.forEach((c, index) => {
                const div = document.createElement('div');
                div.style.cssText = 'background: white; border: 1px solid var(--panel-border); border-radius: 8px; padding: 0.75rem; display: flex; align-items: flex-start; gap: 0.75rem;';
                div.innerHTML = `
@@ -736,8 +740,8 @@ export class UI {
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="white" stroke-width="2" fill="none"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
                  </div>
                  <div style="flex: 1; overflow: hidden;">
-                    <div style="font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${c.name}</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">${c.l} x ${c.w} x ${c.h} мм, ${c.weight} кг, ${c.qty} шт</div>
+                    <div style="font-weight: 600; font-size: 0.85rem; color: var(--text-main); margin-bottom: 2px;">${index + 1}. ${c.name}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">${c.l*10} x ${c.w*10} x ${c.h*10} мм, ${c.weight} кг, ${c.qty} шт</div>
                     <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; color: #94a3b8;">
                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" style="cursor: pointer;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" style="cursor: pointer;"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>

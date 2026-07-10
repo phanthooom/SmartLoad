@@ -1,12 +1,20 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+let cachedTruckGeometry = null;
 
 export class CargoScene {
   constructor(canvas) {
     this.canvas = canvas;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf1f5f9); // light gray background
+    this.scene.background = new THREE.Color(0xf0f2f5); // light gray background
+    this.scene.fog = new THREE.Fog(0xf0f2f5, 15, 80);
+
+    const gridHelper = new THREE.GridHelper(200, 200, 0xffffff, 0xffffff);
+    gridHelper.position.y = -1.0;
+    this.scene.add(gridHelper);
     
     const w = canvas.clientWidth || 800;
     const h = canvas.clientHeight || 600;
@@ -133,7 +141,7 @@ export class CargoScene {
         );
 
         if (isOutside) {
-          this.selectedMesh.position.y = h / 2; // Snap to ground
+          this.selectedMesh.position.y = -1.0 + h / 2; // Snap to ground
           this.selectedMesh.userData.isStaged = true;
           this.selectedMesh.userData.isManual = false;
         } else {
@@ -647,25 +655,126 @@ export class CargoScene {
     const sy = h / 100;
     const sz = l / 100;
 
-    // прицеп (прозрачный синий бокс)
+    // прицеп (прозрачный белый бокс как в ДжетЛоадер)
     const trailerGeo = new THREE.BoxGeometry(sx, sy, sz);
     const trailerMat = new THREE.MeshBasicMaterial({
-      color: 0x378ADD, transparent: true, opacity: 0.2, side: THREE.DoubleSide
+      color: 0xffffff, transparent: true, opacity: 0.1, side: THREE.DoubleSide
     });
-    const trailer = new THREE.Mesh(trailerGeo, trailerMat);
+    const floorMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: false, side: THREE.DoubleSide
+    });
+    const invisibleMat = new THREE.MeshBasicMaterial({ visible: false });
+    // Materials: +x, -x, +y, -y, +z (front), -z (back)
+    const trailerMaterials = [
+      trailerMat, trailerMat, trailerMat, floorMat, trailerMat, invisibleMat
+    ];
+    const trailer = new THREE.Mesh(trailerGeo, trailerMaterials);
     trailer.position.set(sx/2, sy/2, sz/2);
     trailer.raycast = () => {};
     this.containerGroup.add(trailer);
 
-    // синие грани прицепа
+    // Добавляем чуть приоткрытые двери сзади (Z=0)
+    const doorGeoL = new THREE.PlaneGeometry(sx/2, sy);
+    doorGeoL.translate(sx/4, 0, 0); // hinge at X=0
+    const doorL = new THREE.Mesh(doorGeoL, trailerMat);
+    doorL.position.set(0, sy/2, 0);
+    doorL.rotation.y = Math.PI / 16; // slightly open outwards
+    
+    const doorGeoR = new THREE.PlaneGeometry(sx/2, sy);
+    doorGeoR.translate(-sx/4, 0, 0); // hinge at X=sx
+    const doorR = new THREE.Mesh(doorGeoR, trailerMat);
+    doorR.position.set(sx, sy/2, 0);
+    doorR.rotation.y = -Math.PI / 16;
+    
+    const doorEdgesMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+    doorL.add(new THREE.LineSegments(new THREE.EdgesGeometry(doorGeoL), doorEdgesMat));
+    doorR.add(new THREE.LineSegments(new THREE.EdgesGeometry(doorGeoR), doorEdgesMat));
+    
+    this.containerGroup.add(doorL);
+    this.containerGroup.add(doorR);
+
+    // Колеса прицепа (Сдвоенные, в стиле STL тягача)
+    const wRadius = 0.5;
+    const wThickness = 0.2; // толщина одного ската
+    const wheelMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xcccccc });
+    const wEdgeMat = new THREE.LineBasicMaterial({ color: 0x666666 });
+
+    const createSingleTire = () => {
+        const group = new THREE.Group();
+        
+        // Шина
+        const tireGeo = new THREE.CylinderGeometry(wRadius, wRadius, wThickness, 32);
+        tireGeo.rotateZ(Math.PI / 2);
+        const tire = new THREE.Mesh(tireGeo, wheelMat);
+        tire.add(new THREE.LineSegments(new THREE.EdgesGeometry(tireGeo, 15), wEdgeMat));
+        group.add(tire);
+        
+        // Внешний обод диска (чуть выпирает для контура)
+        const rimOuterGeo = new THREE.CylinderGeometry(wRadius * 0.75, wRadius * 0.75, wThickness + 0.002, 32);
+        rimOuterGeo.rotateZ(Math.PI / 2);
+        const rimOuter = new THREE.Mesh(rimOuterGeo, wheelMat);
+        rimOuter.add(new THREE.LineSegments(new THREE.EdgesGeometry(rimOuterGeo, 15), wEdgeMat));
+        group.add(rimOuter);
+
+        // Внутренняя часть диска (чуть утоплена)
+        const rimInnerGeo = new THREE.CylinderGeometry(wRadius * 0.5, wRadius * 0.5, wThickness - 0.002, 32);
+        rimInnerGeo.rotateZ(Math.PI / 2);
+        const rimInner = new THREE.Mesh(rimInnerGeo, wheelMat);
+        rimInner.add(new THREE.LineSegments(new THREE.EdgesGeometry(rimInnerGeo, 15), wEdgeMat));
+        group.add(rimInner);
+
+        // Ступица (выпирает)
+        const hubGeo = new THREE.CylinderGeometry(wRadius * 0.25, wRadius * 0.25, wThickness + 0.004, 16);
+        hubGeo.rotateZ(Math.PI / 2);
+        const hub = new THREE.Mesh(hubGeo, wheelMat);
+        hub.add(new THREE.LineSegments(new THREE.EdgesGeometry(hubGeo, 15), wEdgeMat));
+        group.add(hub);
+
+        return group;
+    };
+
+    const wheelY = -0.5; // touches Y=0 and Y=-1.0
+    const spacing = 0.22; // расстояние между сдвоенными колесами
+
+    for (let i = 0; i < 3; i++) {
+      const zPos = 1.5 + i * 1.5;
+      
+      // Левая сторона (внешнее и внутреннее)
+      const lo = createSingleTire();
+      lo.position.set(0.1, wheelY, zPos);
+      this.containerGroup.add(lo);
+      
+      const li = createSingleTire();
+      li.position.set(0.1 + spacing, wheelY, zPos);
+      this.containerGroup.add(li);
+      
+      // Правая сторона (внешнее и внутреннее)
+      const ro = createSingleTire();
+      ro.position.set(sx - 0.1, wheelY, zPos);
+      this.containerGroup.add(ro);
+      
+      const ri = createSingleTire();
+      ri.position.set(sx - 0.1 - spacing, wheelY, zPos);
+      this.containerGroup.add(ri);
+    }
+
+    // тонкие грани прицепа
     const edgesGeo = new THREE.EdgesGeometry(trailerGeo);
-    const edgesMat = new THREE.LineBasicMaterial({ color: 0x185FA5, linewidth: 2 });
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x000000 });
     const edges = new THREE.LineSegments(edgesGeo, edgesMat);
     edges.position.set(sx/2, sy/2, sz/2);
     edges.raycast = () => {};
     this.containerGroup.add(edges);
 
-    this.camera.position.set(sx * 1.5, sy * 1.5, sz * 1.5);
+    if (type !== 'none' && type !== '') {
+      this.containerGroup.add(this._createTruckCabin(sx, sy, sz));
+    }
+    
+    // Add Dimensions
+    this.containerGroup.add(this.drawDimensions(sx, sy, sz));
+
+    // Set camera to look from the front-left diagonally
+    this.camera.position.set(-sx * 1.5, sy * 3, sz * 1.3);
     this.controls.target.set(sx/2, sy/2, sz/2);
     this.controls.update();
 
@@ -760,6 +869,159 @@ export class CargoScene {
   }
 
 
+
+  createDimensionLabel(text) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.clearRect(0, 0, 128, 32);
+    
+    ctx.fillStyle = '#000000';
+    ctx.font = '600 18px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 64, 16);
+    
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.8, 0.2, 1);
+    return sprite;
+  }
+
+  drawDimensions(sx, sy, sz) {
+    const group = new THREE.Group();
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x000000 });
+    
+    const offset = 0.6; // Offset lines by 0.6 meters from the truck
+    const tickLen = 0.15; // Length of the tick marks
+    
+    const points = [];
+    
+    // --- Z-axis ruler (Length) ---
+    points.push(new THREE.Vector3(-offset, 0, -0.2), new THREE.Vector3(-offset, 0, sz + 0.2));
+    
+    const stepZ = 2; // Ticks every 2 meters
+    for (let z = 0; z <= sz; z += stepZ) {
+        points.push(new THREE.Vector3(-offset - tickLen/2, 0, z), new THREE.Vector3(-offset + tickLen/2, 0, z));
+        if (z > 0) {
+            const label = this.createDimensionLabel(`${(z*1000).toFixed(0)}`);
+            label.position.set(-offset - 0.3, 0.05, z);
+            group.add(label);
+        }
+    }
+    if (sz % stepZ !== 0) {
+        points.push(new THREE.Vector3(-offset - tickLen/2, 0, sz), new THREE.Vector3(-offset + tickLen/2, 0, sz));
+        const label = this.createDimensionLabel(`${(sz*1000).toFixed(0)}`);
+        label.position.set(-offset - 0.3, 0.05, sz);
+        group.add(label);
+    }
+    
+    // --- X-axis ruler (Width) ---
+    points.push(new THREE.Vector3(-0.2, 0, -offset), new THREE.Vector3(sx + 0.2, 0, -offset));
+    
+    const stepX = 1; // Ticks every 1 meter
+    for (let x = 0; x <= sx; x += stepX) {
+        points.push(new THREE.Vector3(x, 0, -offset - tickLen/2), new THREE.Vector3(x, 0, -offset + tickLen/2));
+        if (x > 0) {
+            const label = this.createDimensionLabel(`${(x*1000).toFixed(0)}`);
+            label.position.set(x, 0.05, -offset - 0.2);
+            group.add(label);
+        }
+    }
+    if (sx % stepX !== 0) {
+        points.push(new THREE.Vector3(sx, 0, -offset - tickLen/2), new THREE.Vector3(sx, 0, -offset + tickLen/2));
+        const label = this.createDimensionLabel(`${(sx*1000).toFixed(0)}`);
+        label.position.set(sx, 0.05, -offset - 0.2);
+        group.add(label);
+    }
+
+    // --- Y-axis ruler (Height) ---
+    points.push(new THREE.Vector3(sx + offset, -0.2, sz), new THREE.Vector3(sx + offset, sy + 0.2, sz));
+    
+    const stepY = 1; // Ticks every 1 meter
+    for (let y = 0; y <= sy; y += stepY) {
+        points.push(new THREE.Vector3(sx + offset - tickLen/2, y, sz), new THREE.Vector3(sx + offset + tickLen/2, y, sz));
+        if (y > 0) {
+            const label = this.createDimensionLabel(`${(y*1000).toFixed(0)}`);
+            label.position.set(sx + offset + 0.3, y, sz);
+            group.add(label);
+        }
+    }
+    if (sy % stepY !== 0) {
+        points.push(new THREE.Vector3(sx + offset - tickLen/2, sy, sz), new THREE.Vector3(sx + offset + tickLen/2, sy, sz));
+        const label = this.createDimensionLabel(`${(sy*1000).toFixed(0)}`);
+        label.position.set(sx + offset + 0.3, sy, sz);
+        group.add(label);
+    }
+    
+    group.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), lineMat));
+    
+    group.traverse(c => {
+        if (c.isLine || c.isSprite) c.raycast = () => {};
+    });
+    
+    return group;
+  }
+
+  _createTruckCabin(sx, sy, sz) {
+    const group = new THREE.Group();
+    
+    const setupMesh = (geometry) => {
+        const cabinMat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0xcccccc });
+        const mesh = new THREE.Mesh(geometry, cabinMat);
+        
+        // Correct STL orientation from CAD to Three.js
+        geometry.rotateX(-Math.PI / 2);
+        
+        geometry.computeBoundingBox();
+        const bbox = geometry.boundingBox;
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        
+        const targetHeight = 3.8;
+        const scale = targetHeight / size.y;
+        mesh.scale.set(scale, scale, scale);
+        
+        geometry.translate(
+            -(bbox.max.x + bbox.min.x) / 2,
+            -bbox.min.y,
+            -(bbox.max.z + bbox.min.z) / 2
+        );
+        
+        // Position it so the center of the truck is at the front of the trailer.
+        // This makes the cabin stick out forward (+Z) and the chassis go under the trailer (-Z).
+        mesh.position.set(sx/2, -1.0, sz);
+        
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x666666 });
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 15), edgeMat);
+        mesh.add(edges);
+        
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.raycast = () => {};
+        
+        group.add(mesh);
+        this.requestRender();
+    };
+
+    if (cachedTruckGeometry) {
+        setupMesh(cachedTruckGeometry);
+    } else {
+        const loader = new STLLoader();
+        loader.load('/models/truck.stl', (geometry) => {
+            cachedTruckGeometry = geometry;
+            setupMesh(geometry);
+        }, undefined, (error) => {
+            console.error('Error loading truck STL:', error);
+        });
+    }
+
+    return group;
+  }
 
   drawCargo(placedItems, pallets = [], stagedItems = []) {
     if (this.transformControl) {
